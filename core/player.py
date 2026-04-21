@@ -8,7 +8,6 @@ class Player:
 
     async def play(self, steps):
         self.is_playing = True
-        page = self.browser_manager.page
 
         for i, step in enumerate(steps):
             if not self.is_playing:
@@ -18,20 +17,28 @@ class Player:
             self.on_step_status_change(i, "executing")
             
             try:
+                # 确定要在哪个页面上执行操作
+                page_index = step.get('page_index', 0)
+                if page_index < len(self.browser_manager.pages):
+                    page = self.browser_manager.pages[page_index]
+                    # 将该页面带到前台
+                    await page.bring_to_front()
+                else:
+                    # 如果找不到对应的标签页，回退到当前活跃页面
+                    page = self.browser_manager.page
+                
                 # 模拟人类停留时间
                 wait_time = step.get('wait_time', 1000) / 1000.0
                 await asyncio.sleep(wait_time)
 
                 if step['type'] == 'click':
-                    # 增强型点击：先尝试标准点击，失败则尝试强制点击或 dispatchEvent
+                    # 增强型点击
                     try:
                         await page.click(step['xpath'], timeout=5000)
                     except Exception:
-                        # 如果标准点击失败，尝试强制点击（忽略遮挡）
                         try:
                             await page.click(step['xpath'], force=True, timeout=3000)
                         except Exception:
-                            # 最后的手段：直接在 JS 层触发点击事件
                             await page.evaluate(f"""
                                 const el = document.evaluate('{step['xpath']}', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
                                 if (el) el.click();

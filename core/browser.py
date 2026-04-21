@@ -9,9 +9,11 @@ class BrowserManager:
         self.browser = None
         self.context = None
         self.page = None
+        self.pages = [] # 存储所有打开的页面
         self.loop = None
         self._thread = None
         self.storage_state_path = "storage/session.json"
+        self.on_page_created_callback = None # 新页面创建时的回调
 
     def start_sync(self):
         """在独立线程中启动浏览器"""
@@ -39,29 +41,49 @@ class BrowserManager:
             self.browser.on("disconnected", self._on_browser_disconnected)
             self.context = None
             self.page = None
+            self.pages = []
 
         if not self.context:
             storage_state = None
             if os.path.exists(self.storage_state_path):
                 storage_state = self.storage_state_path
             self.context = await self.browser.new_context(storage_state=storage_state)
+            self.context.on("page", self._on_playwright_page_created)
             self.page = None
 
         if not self.page or self.page.is_closed():
             self.page = await self.context.new_page()
-            self.page.on("close", self._on_page_closed)
+            # self.page 已经在 _on_playwright_page_created 中处理了
 
         return self.page
+
+    async def _on_playwright_page_created(self, page):
+        """Playwright 监听到新页面打开"""
+        if page not in self.pages:
+            self.pages.append(page)
+            if not self.page or self.page.is_closed():
+                self.page = page
+            
+            # 监听页面关闭
+            page.on("close", lambda p: self._on_page_closed(p))
+            
+            # 如果有外部回调（如 Recorder 需要注入脚本），则执行
+            if self.on_page_created_callback:
+                await self.on_page_created_callback(page)
 
     def _on_browser_disconnected(self, _):
         """浏览器断开连接时的回调"""
         self.browser = None
         self.context = None
         self.page = None
+        self.pages = []
 
-    def _on_page_closed(self, _):
+    def _on_page_closed(self, page):
         """页面关闭时的回调"""
-        self.page = None
+        if page in self.pages:
+            self.pages.remove(page)
+        if self.page == page:
+            self.page = self.pages[-1] if self.pages else None
 
     async def _launch_browser(self):
         # 这个方法现在被 _ensure_browser 替代，但为了向后兼容暂时保留逻辑

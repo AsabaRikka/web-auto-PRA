@@ -9,15 +9,12 @@ class Recorder:
 
     async def start(self):
         self.is_recording = True
-        page = self.browser_manager.page
         
-        # 增强版录制脚本
+        # 记录脚本内容
         recorder_script = """
         (function() {
             if (window.__web_auto_recorder_injected) return;
             window.__web_auto_recorder_injected = true;
-
-            console.log('[Recorder] 注入成功，开始监听点击事件...');
 
             function getXPath(element) {
                 try {
@@ -43,12 +40,9 @@ class Recorder:
                 return '';
             }
 
-            // 使用 mousedown 捕获，因为它比 click 更难被阻止
             window.addEventListener('mousedown', (e) => {
                 let element = e.target;
                 
-                // --- 核心优化：SVG/Path 归一化逻辑 ---
-                // 如果点到了 svg 或 path，强制寻找它的父级按钮或链接
                 const isSvgRelated = (el) => {
                     const tag = el.tagName.toLowerCase();
                     return tag === 'svg' || tag === 'path' || tag === 'use' || tag === 'circle' || tag === 'rect';
@@ -59,11 +53,7 @@ class Recorder:
                     while (parent && parent !== document.body) {
                         const parentTag = parent.tagName.toLowerCase();
                         const style = window.getComputedStyle(parent);
-                        // 如果父级是按钮、链接，或者有指针手势，就认为它是真正的点击目标
-                        if (parentTag === 'button' || 
-                            parentTag === 'a' || 
-                            style.cursor === 'pointer' || 
-                            parent.getAttribute('role') === 'button') {
+                        if (parentTag === 'button' || parentTag === 'a' || style.cursor === 'pointer' || parent.getAttribute('role') === 'button') {
                             element = parent;
                             break;
                         }
@@ -71,14 +61,10 @@ class Recorder:
                     }
                 }
 
-                // 继续向上寻找最近的可点击祖先（针对普通元素）
                 let clickable = element;
                 while (clickable && clickable !== document.body) {
                     const style = window.getComputedStyle(clickable);
-                    if (clickable.tagName === 'BUTTON' || 
-                        clickable.tagName === 'A' || 
-                        style.cursor === 'pointer' ||
-                        clickable.getAttribute('role') === 'button') {
+                    if (clickable.tagName === 'BUTTON' || clickable.tagName === 'A' || style.cursor === 'pointer' || clickable.getAttribute('role') === 'button') {
                         element = clickable;
                         break;
                     }
@@ -94,12 +80,7 @@ class Recorder:
                     xpath: getXPath(element)
                 };
                 
-                console.log('[Recorder] 记录步骤:', step.description || step.innerText);
-                if (window.onStep) {
-                    window.onStep(step);
-                } else {
-                    console.error('[Recorder] window.onStep 未定义！');
-                }
+                if (window.onStep) window.onStep(step);
             }, true);
 
             window.addEventListener('input', (e) => {
@@ -117,30 +98,45 @@ class Recorder:
         })();
         """
 
-        try:
-            # 暴露回调接口，handle=True 允许在所有 frame 中访问
-            await page.expose_binding("onStep", self._on_step_callback)
-        except Exception:
-            pass
-            
-        # 监听控制台消息，方便我们在 Python 端看到浏览器的报错
-        page.on("console", lambda msg: print(f"浏览器控制台: {msg.text}"))
-        
-        # 注入初始加载
-        await page.add_init_script(recorder_script)
-        
-        # 立即注入到当前所有 Frame
-        for frame in page.frames:
+        async def inject_to_page(page):
+            """将脚本注入到指定页面"""
             try:
-                await frame.evaluate(recorder_script)
+                # 暴露回调
+                try:
+                    await page.expose_binding("onStep", lambda source, data: self._on_step_callback(source, data, page))
+                except Exception:
+                    pass
+                
+                # 注入初始加载
+                await page.add_init_script(recorder_script)
+                
+                # 立即在所有 frame 中执行
+                for frame in page.frames:
+                    try:
+                        await frame.evaluate(recorder_script)
+                    except:
+                        pass
             except Exception as e:
-                print(f"注入 Frame 失败: {e}")
+                print(f"注入页面失败: {e}")
 
-    def _on_step_callback(self, source, step_data):
+        # 设置 BrowserManager 的新页面回调
+        self.browser_manager.on_page_created_callback = inject_to_page
+        
+        # 立即对当前所有已打开的页面进行注入
+        for page in self.browser_manager.pages:
+            await inject_to_page(page)
+
+    def _on_step_callback(self, source, step_data, page):
         if self.is_recording:
-            # 格式化自然语言描述
+            # 记录该步骤发生的页面索引
+            try:
+                page_index = self.browser_manager.pages.index(page)
+            except ValueError:
+                page_index = 0
+                
+            step_data['page_index'] = page_index
             description = self._generate_description(step_data)
-            step_data['description'] = description
+            step_data['description'] = f"[标签页{page_index+1}] {description}"
             self.on_step_recorded(step_data)
 
     def _generate_description(self, step):
