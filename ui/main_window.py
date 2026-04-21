@@ -42,8 +42,20 @@ class MainWindow(QMainWindow):
         left_layout = QVBoxLayout(left_panel)
         
         # 操作步骤部分
+        step_header_layout = QHBoxLayout()
         self.step_label = QLabel("1. 操作步骤记录")
         self.step_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #333;")
+        
+        self.step_select_all_btn = QPushButton("全选")
+        self.step_select_invert_btn = QPushButton("反选")
+        self.step_select_all_btn.setFixedWidth(50)
+        self.step_select_invert_btn.setFixedWidth(50)
+        
+        step_header_layout.addWidget(self.step_label)
+        step_header_layout.addStretch()
+        step_header_layout.addWidget(self.step_select_all_btn)
+        step_header_layout.addWidget(self.step_select_invert_btn)
+        
         self.step_list = QListWidget()
         
         # 相似元素部分
@@ -63,7 +75,7 @@ class MainWindow(QMainWindow):
         
         self.similar_list = QListWidget()
         
-        left_layout.addWidget(self.step_label)
+        left_layout.addLayout(step_header_layout)
         left_layout.addWidget(self.step_list, 3) # 比例 3
         left_layout.addLayout(similar_header_layout)
         left_layout.addWidget(self.similar_list, 2) # 比例 2
@@ -152,6 +164,8 @@ class MainWindow(QMainWindow):
         self.click_similar_btn.clicked.connect(self.click_selected_similar)
         self.select_all_btn.clicked.connect(self.select_all_similar)
         self.select_invert_btn.clicked.connect(self.select_invert_similar)
+        self.step_select_all_btn.clicked.connect(self.select_all_recorded)
+        self.step_select_invert_btn.clicked.connect(self.select_invert_recorded)
         self.step_list.itemClicked.connect(self.on_step_selected)
         self.similar_list.itemClicked.connect(self.on_similar_selected)
         self.similar_list.itemChanged.connect(self.on_similar_item_changed)
@@ -241,6 +255,20 @@ class MainWindow(QMainWindow):
         """反选相似元素"""
         for i in range(self.similar_list.count()):
             item = self.similar_list.item(i)
+            if item.checkState() == Qt.Checked:
+                item.setCheckState(Qt.Unchecked)
+            else:
+                item.setCheckState(Qt.Checked)
+
+    def select_all_recorded(self):
+        """全选操作步骤"""
+        for i in range(self.step_list.count()):
+            self.step_list.item(i).setCheckState(Qt.Checked)
+
+    def select_invert_recorded(self):
+        """反选操作步骤"""
+        for i in range(self.step_list.count()):
+            item = self.step_list.item(i)
             if item.checkState() == Qt.Checked:
                 item.setCheckState(Qt.Unchecked)
             else:
@@ -366,7 +394,10 @@ class MainWindow(QMainWindow):
 
     def add_step_to_ui(self, step_data):
         item_text = f"[{step_data['type'].upper()}] {step_data['description']}"
-        self.step_list.addItem(item_text)
+        item = QListWidgetItem(item_text)
+        item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+        item.setCheckState(Qt.Checked) # 默认录制后自动勾选
+        self.step_list.addItem(item)
         self.log_area.append(f"记录步骤: {item_text}")
 
     def on_play_status_change(self, index, status):
@@ -416,11 +447,21 @@ class MainWindow(QMainWindow):
         self.log_area.append("--- 录制结束 ---")
 
     def start_playback(self):
+        # 过滤出勾选的步骤
+        steps_to_play = []
+        for i in range(self.step_list.count()):
+            if self.step_list.item(i).checkState() == Qt.Checked:
+                steps_to_play.append(self.recorded_steps[i])
+        
+        if not steps_to_play:
+            self.log_area.append("错误: 没有勾选任何要执行的步骤。")
+            return
+
         self.status_bar.showMessage("开始回放...")
-        self.log_area.append("--- 开始回放流程 ---")
+        self.log_area.append(f"--- 开始回放流程 (共 {len(steps_to_play)} 步) ---")
         try:
             self.browser_manager.start_sync()
-            self.browser_manager.run_coroutine(self.player.play(self.recorded_steps))
+            self.browser_manager.run_coroutine(self.player.play(steps_to_play))
         except Exception as e:
             self.log_area.append(f"回放启动失败: {str(e)}")
 
