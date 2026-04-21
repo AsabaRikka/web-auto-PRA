@@ -82,6 +82,66 @@ class BrowserManager:
             return True
         return False
 
+    async def find_similar_elements(self, xpath):
+        """搜索与给定 XPath 相似的元素"""
+        if not self.page:
+            return []
+            
+        script = f"""
+        (function() {{
+            const target = document.evaluate('{xpath}', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+            if (!target) return [];
+            
+            const tagName = target.tagName;
+            const className = target.className;
+            
+            // 简单策略：寻找相同标签且类名相似的元素
+            let similarElements = [];
+            const allElements = document.getElementsByTagName(tagName);
+            
+            for (let el of allElements) {{
+                if (el === target) continue;
+                
+                // 相似度判断：类名完全一致或者包含主要类名
+                if (el.className === className && className !== "") {{
+                    similarElements.push({{
+                        tagName: el.tagName,
+                        className: el.className,
+                        innerText: (el.innerText || "").substring(0, 30).trim(),
+                        xpath: getXPath(el) // 这里复用 recorder 里的 getXPath 逻辑
+                    }});
+                }}
+            }}
+
+            function getXPath(element) {{
+                if (element.id && !/\\d{{4,}}/.test(element.id) && element.id.length < 50) {{
+                    return 'id("' + element.id + '")';
+                }}
+                if (element === document.body) return 'body';
+                let ix = 0;
+                let siblings = element.parentNode ? element.parentNode.childNodes : [];
+                for (let i = 0; i < siblings.length; i++) {{
+                    let sibling = siblings[i];
+                    if (sibling === element) {{
+                        const parentPath = element.parentNode ? getXPath(element.parentNode) : '';
+                        const path = (parentPath ? parentPath + '/' : '') + element.tagName.toLowerCase();
+                        return ix === 0 ? path : path + '[' + (ix + 1) + ']';
+                    }}
+                    if (sibling.nodeType === 1 && sibling.tagName === element.tagName) ix++;
+                }}
+                return '';
+            }}
+            
+            return similarElements;
+        }})();
+        """
+        try:
+            results = await self.page.evaluate(script)
+            return results
+        except Exception as e:
+            print(f"搜索相似元素失败: {e}")
+            return []
+
     async def close(self):
         if self.browser:
             await self.browser.close()

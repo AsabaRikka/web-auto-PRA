@@ -9,18 +9,20 @@ import asyncio
 class AppSignals(QObject):
     recorded = Signal(dict)
     play_status = Signal(int, str)
+    similar_found = Signal(list)
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("WebAuto Recorder - 网页自动化录制工具")
-        self.resize(1000, 750)
+        self.resize(1200, 800)
 
         self.recorded_steps = []
         self.browser_manager = BrowserManager()
         self.signals = AppSignals()
         self.signals.recorded.connect(self.add_step_to_ui)
         self.signals.play_status.connect(self.update_step_status)
+        self.signals.similar_found.connect(self.display_similar_elements)
         
         self.recorder = Recorder(self.browser_manager, self.on_step_recorded)
         self.player = Player(self.browser_manager, self.on_play_status_change)
@@ -30,18 +32,26 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
 
-        # 左侧面板：操作步骤列表
+        # --- 左侧面板：操作步骤与相似元素 ---
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
         
-        self.step_label = QLabel("操作步骤记录")
-        self.step_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        # 操作步骤部分
+        self.step_label = QLabel("1. 操作步骤记录")
+        self.step_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #333;")
         self.step_list = QListWidget()
         
+        # 相似元素部分
+        self.similar_label = QLabel("2. 发现的相似元素")
+        self.similar_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #333; margin-top: 10px;")
+        self.similar_list = QListWidget()
+        
         left_layout.addWidget(self.step_label)
-        left_layout.addWidget(self.step_list)
+        left_layout.addWidget(self.step_list, 3) # 比例 3
+        left_layout.addWidget(self.similar_label)
+        left_layout.addWidget(self.similar_list, 2) # 比例 2
 
-        # 右侧面板：控制与日志
+        # --- 右侧面板：控制与日志 ---
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
 
@@ -55,16 +65,23 @@ class MainWindow(QMainWindow):
         url_layout.addWidget(self.open_url_btn)
         url_layout.addWidget(self.save_session_btn)
 
-        # 录制与回放控制
+        # 核心控制按钮
         control_layout = QHBoxLayout()
         self.record_btn = QPushButton("开始录制")
         self.record_btn.setFixedHeight(40)
         self.record_btn.setStyleSheet("background-color: #f44336; color: white; font-weight: bold;")
         
+        self.search_similar_btn = QPushButton("搜索相似元素")
+        self.search_similar_btn.setFixedHeight(40)
+        self.search_similar_btn.setEnabled(False)
+        self.search_similar_btn.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold;")
+
         self.play_btn = QPushButton("回放流程")
         self.play_btn.setFixedHeight(40)
         self.play_btn.setEnabled(False)
+        
         control_layout.addWidget(self.record_btn)
+        control_layout.addWidget(self.search_similar_btn)
         control_layout.addWidget(self.play_btn)
 
         # 日志区域
@@ -91,6 +108,48 @@ class MainWindow(QMainWindow):
         self.save_session_btn.clicked.connect(self.save_session)
         self.record_btn.clicked.connect(self.toggle_recording)
         self.play_btn.clicked.connect(self.start_playback)
+        self.search_similar_btn.clicked.connect(self.search_similar)
+        self.step_list.itemClicked.connect(self.on_step_selected)
+
+    def on_step_selected(self):
+        """当步骤被选中时，启用搜索相似按钮"""
+        self.search_similar_btn.setEnabled(True)
+
+    def search_similar(self):
+        """搜索与选中步骤相似的元素"""
+        current_row = self.step_list.currentRow()
+        if current_row < 0:
+            return
+            
+        selected_step = self.recorded_steps[current_row]
+        xpath = selected_step.get('xpath')
+        if not xpath:
+            self.log_area.append("选中步骤没有有效的 XPath。")
+            return
+            
+        self.log_area.append(f"正在搜索与 {xpath} 相似的元素...")
+        self.status_bar.showMessage("搜索相似元素中...")
+        
+        async def run_search():
+            results = await self.browser_manager.find_similar_elements(xpath)
+            self.signals.similar_found.emit(results)
+            
+        self.browser_manager.run_coroutine(run_search())
+
+    def display_similar_elements(self, results):
+        """显示搜索到的相似元素"""
+        self.similar_list.clear()
+        if not results:
+            self.log_area.append("未发现相似元素。")
+            self.status_bar.showMessage("未发现相似元素")
+            return
+            
+        for el in results:
+            text = f"[{el['tagName']}] {el['innerText']} | XPath: {el['xpath']}"
+            self.similar_list.addItem(text)
+            
+        self.log_area.append(f"发现 {len(results)} 个相似元素。")
+        self.status_bar.showMessage(f"发现 {len(results)} 个相似元素")
 
     def open_url(self):
         url = self.url_input.text()
