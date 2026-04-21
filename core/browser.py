@@ -37,7 +37,15 @@ class BrowserManager:
             self.pw = await async_playwright().start()
             
         if not self.browser or not self.browser.is_connected():
-            self.browser = await self.pw.chromium.launch(headless=False)
+            # 这里的启动参数非常关键，用于模拟原生浏览器
+            self.browser = await self.pw.chromium.launch(
+                headless=False,
+                args=[
+                    "--start-maximized", 
+                    "--disable-blink-features=AutomationControlled" # 隐藏自动化标记
+                ],
+                ignore_default_args=["--enable-automation"] # 进一步隐藏自动化
+            )
             self.browser.on("disconnected", self._on_browser_disconnected)
             self.context = None
             self.page = None
@@ -47,7 +55,15 @@ class BrowserManager:
             storage_state = None
             if os.path.exists(self.storage_state_path):
                 storage_state = self.storage_state_path
-            self.context = await self.browser.new_context(storage_state=storage_state)
+            
+            # 核心修复：
+            # 1. no_viewport=True 告诉 Playwright 放弃对分辨率的控制，改由窗口大小控制
+            # 2. 设置 User-Agent 使其更像真实浏览器，触发百度等网站的自适应逻辑
+            self.context = await self.browser.new_context(
+                storage_state=storage_state,
+                no_viewport=True,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
             self.context.on("page", self._on_playwright_page_created)
             self.page = None
 
