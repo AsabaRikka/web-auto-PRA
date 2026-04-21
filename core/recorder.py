@@ -22,7 +22,7 @@ class Recorder:
             function getXPath(element) {
                 try {
                     if (element.id && !/\\d{4,}/.test(element.id) && element.id.length < 50) {
-                        return '//*[@id="' + element.id + '"]';
+                        return 'id("' + element.id + '")';
                     }
                     if (element === document.body) return 'body';
                     

@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QPushButton, QListWidget, QLabel, QTextEdit, QStatusBar, QLineEdit, QSpinBox)
+                             QPushButton, QListWidget, QLabel, QTextEdit, QStatusBar, QLineEdit)
 from PySide6.QtCore import Qt, Signal, QObject
 from core.browser import BrowserManager
 from core.recorder import Recorder
@@ -64,22 +64,8 @@ class MainWindow(QMainWindow):
         self.play_btn = QPushButton("回放流程")
         self.play_btn.setFixedHeight(40)
         self.play_btn.setEnabled(False)
-
-        self.batch_count_spin = QSpinBox()
-        self.batch_count_spin.setRange(1, 1000)
-        self.batch_count_spin.setValue(10)
-        self.batch_count_spin.setFixedHeight(40)
-        self.batch_count_spin.setPrefix("数量: ")
-
-        self.batch_btn = QPushButton("批量取消收藏")
-        self.batch_btn.setFixedHeight(40)
-        self.batch_btn.setEnabled(False)
-        self.batch_btn.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold;")
-
         control_layout.addWidget(self.record_btn)
         control_layout.addWidget(self.play_btn)
-        control_layout.addWidget(self.batch_count_spin)
-        control_layout.addWidget(self.batch_btn)
 
         # 日志区域
         self.log_label = QLabel("执行日志")
@@ -105,23 +91,6 @@ class MainWindow(QMainWindow):
         self.save_session_btn.clicked.connect(self.save_session)
         self.record_btn.clicked.connect(self.toggle_recording)
         self.play_btn.clicked.connect(self.start_playback)
-        self.batch_btn.clicked.connect(self.start_batch_action)
-
-    def start_batch_action(self):
-        if not self.recorded_steps:
-            self.log_area.append("错误: 请先录制一次点击收藏图标的操作。")
-            return
-        
-        # 寻找第一个点击操作
-        click_step = next((s for s in self.recorded_steps if s['type'] == 'click'), None)
-        if not click_step:
-            self.log_area.append("错误: 录制列表中没有点击操作。")
-            return
-            
-        count = self.batch_count_spin.value()
-        self.status_bar.showMessage(f"开始批量操作 (数量: {count})...")
-        self.log_area.append(f"--- 开始批量执行: {click_step['tagName']}, 限制数量: {count} ---")
-        self.browser_manager.run_coroutine(self.player.play_batch(click_step, max_count=count))
 
     def open_url(self):
         url = self.url_input.text()
@@ -198,7 +167,6 @@ class MainWindow(QMainWindow):
         self.record_btn.setStyleSheet("background-color: #f44336; color: white;")
         self.status_bar.showMessage("录制已停止")
         self.play_btn.setEnabled(len(self.recorded_steps) > 0)
-        self.batch_btn.setEnabled(len(self.recorded_steps) > 0)
         self.log_area.append("--- 录制结束 ---")
 
     def start_playback(self):
