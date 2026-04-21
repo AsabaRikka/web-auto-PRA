@@ -63,38 +63,34 @@
 
 ## 四、技术栈建议
 
-### 4.1 技术选型对比
+### 4.1 技术选型
 
-| 层级 | 推荐方案 | 备选方案 | 说明 |
-|-----|---------|---------|------|
-| **桌面框架** | **Tauri 2.0** | Electron | 轻量、安全、原生性能好，支持Python后端 |
-| **前端** | **React + TypeScript** | Vue3 | 成熟生态，组件丰富 |
-| **浏览器内核** | **Playwright (Chromium)** | Selenium | 更现代，支持Shadow DOM，元素定位精确 |
-| **Python运行时** | **PyO3 + Python Odessa** | CPython | Tauri 2.0官方推荐，性能好 |
-| **后端/自动化** | **Playwright Python** | - | 核心自动化库 |
-| **状态存储** | **SQLite + encryption** | JSON文件 | 本地存储，安全可靠 |
-| **UI组件库** | **shadcn/ui** | Ant Design | 现代、轻量、易定制 |
-| **图标** | **Lucide React** | - | 开源、持续更新 |
+| 层级 | 推荐方案 | 说明 |
+|-----|---------|------|
+| **桌面框架** | **PySide6 (Qt for Python)** | 工业级 GUI 框架，性能强劲，支持复杂交互 |
+| **浏览器内核** | **Playwright (Chromium)** | 更现代，支持 Shadow DOM，元素定位精确 |
+| **开发语言** | **Python 3.11+** | 核心逻辑与 UI 开发语言 |
+| **自动化库** | **Playwright Python** | 核心自动化录制与回放库 |
+| **状态存储** | **SQLite** | 本地存储流程配置、Cookies 等 |
+| **UI 样式** | **Qt Stylesheets (QSS)** | 类似 CSS，用于美化界面 |
 
-### 4.2 推荐技术栈详解
+### 4.2 架构设计详解
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      Tauri 2.0 桌面应用                       │
+│                      PySide6 桌面应用                         │
 ├───────────────────────┬─────────────────────────────────────┤
-│      前端 (Web View)   │         后端 (Python)                │
+│      UI 界面层 (Qt)    │         核心逻辑层 (Python)          │
 │  ┌─────────────────┐   │   ┌─────────────────────────────┐   │
-│  │ React 18        │   │   │ Playwright (浏览器自动化)     │   │
-│  │ TypeScript      │   │   │ - 元素定位与操作              │   │
-│  │ shadcn/ui       │   │   │ - 截图与视觉检测              │   │
-│  │ Zustand (状态)   │   │   │ - 人类行为模拟               │   │
-│  │ Tailwind CSS    │   │   ├─────────────────────────────┤   │
-│  └────────┬────────┘   │   │ SQLite (流程/状态存储)         │   │
-│           │           │   │ - 加密存储登录状态             │   │
-│           │ IPC       │   │ - 项目配置管理                 │   │
-│  ┌────────┴────────┐   │   └─────────────────────────────┘   │
-│  │ Rust (Tauri核心) │   │                                      │
-│  └─────────────────┘   │                                      │
+│  │ QMainWindow     │   │   │ Playwright Manager          │   │
+│  │ - 录制控制面板    │   │   │ - 浏览器生命周期管理           │   │
+│  │ - 步骤列表视图    │   │   │ - 录制器 (Recorder)          │   │
+│  │ - 日志显示区      │   │   │ - 回放器 (Player)            │   │
+│  └────────┬────────┘   │   ├─────────────────────────────┤   │
+│           │信号槽 (Slots)│   │ Database Manager (SQLite)    │   │
+│           │           │   │ - 流程步骤存储                │   │
+│           │           │   │ - 账号状态管理                │   │
+│           └───────────┘   │                               │
 └───────────────────────┴─────────────────────────────────────┘
 ```
 
@@ -109,35 +105,26 @@
 
 ---
 
-## 五、项目架构设计
+## 五、项目目录结构
 
 ```
 web-auto/
-├── src/                          # 前端源码
-│   ├── components/              # React组件
-│   │   ├── RecordingPanel/      # 录制面板
-│   │   ├── StepList/            # 操作步骤列表
-│   │   ├── BrowserView/          # 浏览器视图
-│   │   └── SettingsModal/        # 设置弹窗
-│   ├── stores/                  # Zustand状态管理
-│   ├── hooks/                   # 自定义Hooks
-│   └── lib/                     # 工具函数
-│
-├── src-tauri/                   # Tauri后端
-│   ├── src/
-│   │   └── main.rs              # Rust入口
-│   ├── python/                  # Python自动化脚本
-│   │   ├── recorder.py          # 录制核心
-│   │   ├── player.py            # 回放核心
-│   │   ├── element_matcher.py    # 元素匹配
-│   │   └── human_behavior.py     # 人类行为模拟
-│   └── Cargo.toml
-│
-├── packages/                    # 共享包
-│   └── types/                   # 跨语言类型定义
-│
-└── storage/                     # 本地存储
-    └── data.db                  # SQLite数据库
+├── main.py                      # 应用入口
+├── ui/                          # UI 界面相关
+│   ├── main_window.py           # 主窗口
+│   ├── widgets/                 # 自定义组件
+│   └── styles/                  # QSS 样式文件
+├── core/                        # 核心逻辑
+│   ├── recorder.py              # 录制核心
+│   ├── player.py                # 回放核心
+│   ├── browser.py               # 浏览器管理
+│   └── human_behavior.py        # 人类行为模拟
+├── database/                    # 数据库
+│   └── db_manager.py            # SQLite 管理
+├── utils/                       # 工具函数
+│   └── selector.py              # 元素选择器生成器
+├── assets/                      # 静态资源 (图标等)
+└── requirements.txt             # 依赖项
 ```
 
 ---
